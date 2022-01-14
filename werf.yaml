@@ -1,0 +1,6 @@
+configVersion: 1
+project: ekp
+---
+image: critterz
+dockerfile: Dockerfile
+context: .
