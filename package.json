@@ -8,9 +8,10 @@
     "build": "nest build",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
-    "k:check-cert": "kubectl describe certificate ${npm_package_config_namespace}-public-tls -n $npm_package_config_namespace",
-    "k:gen-secret-key": "werf helm secret generate-secret-key > .werf_secret_key",
-    "k:encrypt-secrets": "werf helm secret values encrypt clear-values.yaml -o .helm/secret-values.yaml"
+    "gen-secret-key": "werf helm secret generate-secret-key > .werf_secret_key",
+    "encrypt-secrets": "werf helm secret values encrypt clear-values.yaml -o .helm/secret-values.yaml",
+    "gh-set-secret-key": "gh secret set WERF_SECRET_KEY --repos=\"ekp-critterz\" < .werf_secret_key",
+    "gh-set-do-creds": "gh secret set KUBE_CONFIG_BASE64_DATA --repos=\"ekp-critterz\" -b$(doctl kubernetes cluster kubeconfig show ekp | base64)"
   },
   "repository": {
     "type": "git",
