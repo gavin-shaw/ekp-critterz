@@ -24,9 +24,8 @@
   },
   "homepage": "https://github.com/gavin-shaw/ekp-critterz#readme",
   "dependencies": {
-    "@earnkeeper/ekp-sdk-nestjs": "^0.1.4",
-    "@earnkeeper/ekp-ui": "^0.1.1",
-    "lodash": "^4.17.21"
+    "@earnkeeper/ekp-sdk-nestjs": "^0.1.5",
+    "@earnkeeper/ekp-ui": "^0.1.1"
   },
   "devDependencies": {
     "@nestjs/cli": "^8.0.0",

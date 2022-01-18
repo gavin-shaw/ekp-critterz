@@ -9,6 +9,6 @@ RUN npm ci
 
 COPY . /app 
 
-RUN yarn build
+RUN npm run build
 
 CMD ["node","dist/main"]
