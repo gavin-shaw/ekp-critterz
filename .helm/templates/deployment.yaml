@@ -30,6 +30,8 @@ spec:
               value: '{{ .Values.moralis.serverUrl }}'
             - name: REDIS_HOST
               value: 'ekp-redis-master'
+            - name: OPENSEA_API_KEY
+              value: '{{ .Values.opensea.apiKey }}'
           ports:
             - containerPort: 3001
               protocol: TCP
