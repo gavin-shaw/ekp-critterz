@@ -6,7 +6,7 @@
   "scripts": {
     "prebuild": "rimraf dist",
     "build": "nest build",
-    "start:dev": "nest start --watch",
+    "start": "nest start --watch",
     "start:prod": "node dist/main",
     "gen-secret-key": "werf helm secret generate-secret-key > .werf_secret_key",
     "encrypt-secrets": "werf helm secret values encrypt clear-values.yaml -o .helm/secret-values.yaml",
@@ -23,14 +23,11 @@
     "url": "https://github.com/gavin-shaw/ekp-critterz/issues"
   },
   "homepage": "https://github.com/gavin-shaw/ekp-critterz#readme",
-  "dependencies": {
-    "@earnkeeper/ekp-sdk-nestjs": "^0.1.5",
-    "@earnkeeper/ekp-ui": "^0.1.1"
-  },
   "devDependencies": {
     "@nestjs/cli": "^8.0.0",
     "@nestjs/schematics": "^8.0.0",
     "@nestjs/testing": "^8.0.0",
+    "@types/bull": "^3.15.7",
     "@types/express": "^4.17.13",
     "@types/jest": "^27.0.1",
     "@types/lodash": "^4.14.177",
@@ -50,5 +47,8 @@
     "ts-node": "^10.0.0",
     "tsconfig-paths": "^3.10.1",
     "typescript": "^4.3.5"
+  },
+  "dependencies": {
+    "@earnkeeper/ekp-sdk-nestjs": "^0.2.4"
   }
 }

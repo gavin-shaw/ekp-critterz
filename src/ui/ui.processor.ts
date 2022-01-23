@@ -1,31 +1,24 @@
 import {
+  ClientService,
   ClientStateChangedEvent,
-  EventService,
   LayerDto,
   logger,
 } from '@earnkeeper/ekp-sdk-nestjs';
-import { Process, Processor } from '@nestjs/bull';
-import { Job } from 'bull';
-import { validate } from 'bycontract';
-import { UI_QUEUE } from '../util/queue.names';
+import { Injectable } from '@nestjs/common';
 import menus from './critterz.menus';
 import pages from './critterz.pages';
 
-@Processor(UI_QUEUE)
+@Injectable()
 export class UiProcessor {
-  constructor(private eventService: EventService) {}
-
-  private validateEvent(event: ClientStateChangedEvent) {
-    const clientId = validate(event.clientId, 'string');
-
-    return {
-      clientId,
-    };
+  constructor(private clientService: ClientService) {
+    this.clientService.clientStateEvents$.subscribe(
+      (event: ClientStateChangedEvent) =>
+        this.handleClientStateChangedEvent(event),
+    );
   }
 
-  @Process()
-  async handleClientStateChangedEvent(job: Job<ClientStateChangedEvent>) {
-    const { clientId } = this.validateEvent(job.data);
+  async handleClientStateChangedEvent(event: ClientStateChangedEvent) {
+    const { clientId } = event;
 
     logger.log(`Processing UI_QUEUE for ${clientId}`);
 
@@ -42,6 +35,6 @@ export class UiProcessor {
       },
     ];
 
-    this.eventService.addLayers(clientId, layers);
+    this.clientService.addLayers(clientId, layers);
   }
 }

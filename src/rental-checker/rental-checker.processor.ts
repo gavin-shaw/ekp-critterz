@@ -1,84 +1,47 @@
 import {
-  AbstractProcessor,
-  BaseContext,
+  ClientService,
+  ClientStateChangedEvent,
   EthersService,
   MoralisService,
   OpenseaService,
 } from '@earnkeeper/ekp-sdk-nestjs';
-import { Processor } from '@nestjs/bull';
+import { Injectable } from '@nestjs/common';
 import { ethers } from 'ethers';
 import _ from 'lodash';
 import * as Rx from 'rxjs';
-import { Observable } from 'rxjs';
 import {
   NULL_ADDRESS,
   RENTAL_CHECKER_DOCUMENT,
-  RENTAL_CHECKER_MILESTONES,
-  RENTAL_CHECK_QUEUE,
   scritterzAbi,
   SCRITTERZ_CONTRACT_ADDRESS,
 } from '../util';
 import { RentalCheckerDocument } from './rental-checker.document';
+import moment from 'moment';
 
-@Processor(RENTAL_CHECK_QUEUE)
-export class RentalCheckerProcessor extends AbstractProcessor<Context> {
+@Injectable()
+export class RentalCheckerProcessor {
   constructor(
+    private clientService: ClientService,
     private ethersService: EthersService,
     private moralisService: MoralisService,
     private openseaService: OpenseaService,
-  ) {
-    super();
-  }
+  ) {}
 
-  pipe(source: Observable<BaseContext>): Observable<BaseContext> {
-    return source.pipe(
-      this.emitMilestones(),
+  onModuleInit() {
+    this.clientService.clientStateEvents$.pipe(
       this.mapRentalCheckerDocuments(),
       this.emitDocuments(),
-      this.removeMilestones(),
     );
   }
 
-  protected removeMilestones() {
-    return Rx.tap((context: Context) => {
-      const removeMilestonesQuery = {
-        id: RENTAL_CHECKER_MILESTONES,
-      };
-
-      this.eventService.removeLayers(context.clientId, removeMilestonesQuery);
-    });
-  }
-
-  protected emitMilestones() {
-    return Rx.tap((context: Context) => {
-      const documents = [
-        {
-          id: '1-documents',
-          status: 'progressing',
-          label: 'Fetching token data',
-        },
-      ];
-
-      const layers = [
-        {
-          id: RENTAL_CHECKER_MILESTONES,
-          collectionName: RENTAL_CHECKER_MILESTONES,
-          set: documents,
-        },
-      ];
-
-      this.eventService.addLayers(context.clientId, layers);
-    });
-  }
-
   private mapRentalCheckerDocuments() {
-    return Rx.mergeMap(async (context: Context) => {
-      const form = context.forms?.critterzRentalCheck;
+    return Rx.mergeMap(async (event: ClientStateChangedEvent) => {
+      const form = event.state.forms?.critterzRentalCheck;
 
       const tokenId = form?.tokenId;
 
       if (!form || !tokenId || isNaN(tokenId)) {
-        return { ...context, documents: [] };
+        return { event, documents: [] };
       }
 
       let lockExpiration = undefined;
@@ -167,35 +130,31 @@ export class RentalCheckerProcessor extends AbstractProcessor<Context> {
         tokenId,
       };
 
-      return <Context>{
-        ...context,
+      return {
+        event,
         documents: [document],
       };
     });
   }
 
   private emitDocuments() {
-    return Rx.tap((context: Context) => {
-      if (context.documents.length === 0) {
+    return Rx.tap(({ event, documents }) => {
+      if (documents.length === 0) {
         const removeQuery = {
           id: RENTAL_CHECKER_DOCUMENT,
         };
 
-        this.eventService.removeLayers(context.clientId, removeQuery);
+        this.clientService.removeLayers(event.clientId, removeQuery);
       } else {
         const addLayers = [
           {
             id: RENTAL_CHECKER_DOCUMENT,
             collectionName: RENTAL_CHECKER_DOCUMENT,
-            set: context.documents,
+            set: event.documents,
           },
         ];
-        this.eventService.addLayers(context.clientId, addLayers);
+        this.clientService.addLayers(event.clientId, addLayers);
       }
     });
   }
-}
-
-interface Context extends BaseContext {
-  readonly documents?: RentalCheckerDocument[];
 }
