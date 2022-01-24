@@ -93,7 +93,13 @@ function marketRow(): UiElement {
       {
         id: 'totalCost',
         value: '$.totalCost',
-        label: formatCurrency('$.totalCost', '$.fiatSymbol'),
+        cell: Span({
+          content: formatCurrency('$.totalCost', '$.fiatSymbol'),
+          tooltip: formatTemplate('Eth: {{ eth }} + Gas: {{ gas }}', {
+            eth: formatToken('$.ethCost'),
+            gas: formatToken('$.ethGasCost'),
+          }),
+        }),
       },
       {
         id: 'estBlock',
