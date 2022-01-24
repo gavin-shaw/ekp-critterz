@@ -115,10 +115,21 @@ function marketParamsForm(): UiElement {
   return Form({
     name: 'critterzMarketParams',
     className: 'mb-2',
-    schema: JsonSchema.simple({
-      playHours: 'number',
-      ownedCritterz: 'number',
-    }),
+    schema: {
+      type: 'object',
+      properties: {
+        playHours: {
+          type: 'number',
+        },
+        ownedCritterz: {
+          type: 'number',
+        },
+      },
+      default: {
+        playHours: 3,
+        ownedCritterz: 0,
+      },
+    },
     child: Layout.autocol([
       Input({
         label: 'Daily Play Hours',
