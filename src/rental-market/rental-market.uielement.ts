@@ -39,7 +39,7 @@ export default function element(): UiElement {
             ],
           }),
           Col({
-            className: 'my-auto col-auto col-float-end',
+            className: 'my-auto col-auto',
             children: [
               Link({
                 content: 'Opensea listings',
