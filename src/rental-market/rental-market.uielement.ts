@@ -61,6 +61,7 @@ function marketRow(): UiElement {
     defaultSortFieldId: 'listed',
     defaultSortAsc: false,
     data: documents(RentalListingDocument),
+    isBusy: isBusy(collection(RentalListingDocument)),
     columns: [
       {
         id: 'tokenId',

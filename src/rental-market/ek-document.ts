@@ -4,4 +4,5 @@ export abstract class EkDocument {
   }
 
   readonly id: string;
+  readonly updated?: number;
 }

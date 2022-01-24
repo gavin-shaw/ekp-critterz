@@ -235,6 +235,7 @@ export class RentalMarketService {
 
   mapListingDocument() {
     return Rx.mergeMap(async (context: RentalListingContext) => {
+      const nowMoment = moment.unix(context.startTimestamp);
       const form = context.clientState?.forms?.critterzMarketParams;
       const numCritter = (form?.ownedCritterz ?? 0) + 1;
       const numHours = form?.playHours ?? 3;
@@ -262,9 +263,7 @@ export class RentalMarketService {
       if (!expiresAt) {
         expiresAt = context.startTimestamp + 7 * 86400;
       }
-      let hoursLeft = moment
-        .unix(expiresAt)
-        .diff(moment.unix(context.startTimestamp), 'hours');
+      let hoursLeft = moment.unix(expiresAt).diff(nowMoment, 'hours');
 
       if (hoursLeft < 0) {
         hoursLeft = 0;
@@ -292,6 +291,7 @@ export class RentalMarketService {
         tokenIdLink: `https://opensea.io/assets/${SCRITTERZ_CONTRACT_ADDRESS}/${context.asset.token_id}`,
         listed: moment(`${createdEvent.listing_time}Z`).unix(),
         name: context.asset.name,
+        updated: context.startTimestamp,
         seller: createdEvent.seller?.address,
         sold: !!soldEvent,
         soldTime: !!soldEvent

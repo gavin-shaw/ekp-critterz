@@ -50,6 +50,6 @@
   },
   "dependencies": {
     "@earnkeeper/ekp-sdk-nestjs": "^0.2.4",
-    "@earnkeeper/ekp-ui": "^0.1.2"
+    "@earnkeeper/ekp-ui": "^0.1.3"
   }
 }
