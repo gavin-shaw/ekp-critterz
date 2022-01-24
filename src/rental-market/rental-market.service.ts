@@ -237,7 +237,7 @@ export class RentalMarketService {
     return Rx.mergeMap(async (context: RentalListingContext) => {
       const nowMoment = moment.unix(context.startTimestamp);
       const form = context.clientState?.forms?.critterzMarketParams;
-      const numCritter = (form?.ownedCritterz ?? 0) + 1;
+      const numCritter = form?.ownedCritterz ?? 0;
       const numHours = form?.playHours ?? 3;
 
       const createdEvent = context.assetEvents.find(
@@ -269,11 +269,13 @@ export class RentalMarketService {
         hoursLeft = 0;
       }
 
-      const estBlock =
+      const calcBlock = (numCritter) =>
         ((24 * numCritter + Math.sqrt(numCritter * numHours) * 100) *
           0.66 *
           hoursLeft) /
         24;
+
+      const estBlock = calcBlock(numCritter + 1) - calcBlock(numCritter);
 
       const totalCost = (ethCost + context.ethGasCost) * context.ethPrice;
 
