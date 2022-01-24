@@ -28,6 +28,8 @@ spec:
               value: '{{ .Values.moralis.appId }}'
             - name: MORALIS_SERVER_URL
               value: '{{ .Values.moralis.serverUrl }}'
+            - name: MONGO_HOST
+              value: 'ekp-critterz-mongodb'
             - name: REDIS_HOST
               value: 'ekp-critterz-redis-master'
             - name: OPENSEA_API_KEY

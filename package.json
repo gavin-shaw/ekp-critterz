@@ -1,6 +1,6 @@
 {
   "name": "ekp-critterz",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "EarnKeeper.io plugin for https://critterz.xyz",
   "main": "index.js",
   "scripts": {
