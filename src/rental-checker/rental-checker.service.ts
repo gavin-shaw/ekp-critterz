@@ -10,28 +10,29 @@ import { ethers } from 'ethers';
 import _ from 'lodash';
 import * as Rx from 'rxjs';
 import {
+  collection,
   NULL_ADDRESS,
-  RENTAL_CHECKER_DOCUMENT,
   scritterzAbi,
   SCRITTERZ_CONTRACT_ADDRESS,
 } from '../util';
 import { RentalCheckerDocument } from './rental-checker.document';
-import moment from 'moment';
 
 @Injectable()
-export class RentalCheckerProcessor {
+export class RentalCheckerService {
   constructor(
     private clientService: ClientService,
     private ethersService: EthersService,
     private moralisService: MoralisService,
     private openseaService: OpenseaService,
-  ) {}
-
-  onModuleInit() {
-    this.clientService.clientStateEvents$.pipe(
-      this.mapRentalCheckerDocuments(),
-      this.emitDocuments(),
-    );
+  ) {
+    this.clientService.clientStateEvents$
+      .pipe(
+        this.emitBusy(),
+        this.mapRentalCheckerDocuments(),
+        this.emitDocuments(),
+        this.emitDone(),
+      )
+      .subscribe();
   }
 
   private mapRentalCheckerDocuments() {
@@ -58,7 +59,7 @@ export class RentalCheckerProcessor {
           provider,
         );
 
-        let tokenUri: string = await contract.tokenURI(Number(tokenId));
+        let tokenUri: string = await contract.tokenURI(tokenId);
 
         tokenUri = tokenUri.replace('data:application/json;base64,', '');
 
@@ -75,7 +76,7 @@ export class RentalCheckerProcessor {
 
       const openseaAsset = await this.openseaService.assetOf(
         SCRITTERZ_CONTRACT_ADDRESS,
-        tokenId,
+        tokenId.toString(),
       );
 
       const sellOrders =
@@ -104,7 +105,7 @@ export class RentalCheckerProcessor {
       const tokenIdTransfers = await this.moralisService.nftTransfersOfTokenId(
         'eth',
         SCRITTERZ_CONTRACT_ADDRESS,
-        tokenId,
+        tokenId.toString(),
       );
 
       const lastStakingTransfer = _.chain(tokenIdTransfers)
@@ -137,20 +138,49 @@ export class RentalCheckerProcessor {
     });
   }
 
+  // TODO: make this DRY
+  protected emitBusy() {
+    return Rx.tap((event: ClientStateChangedEvent) => {
+      const collectionName = collection(RentalCheckerDocument);
+
+      const addLayers = [
+        {
+          id: `busy-${collectionName}`,
+          collectionName: 'busy',
+          set: [{ id: collectionName }],
+        },
+      ];
+      this.clientService.addLayers(event.clientId, addLayers);
+    });
+  }
+
+  // TODO: make this DRY
+  protected emitDone() {
+    const collectionName = collection(RentalCheckerDocument);
+
+    return Rx.tap(({ event }) => {
+      const removeQuery = {
+        id: `busy-${collectionName}`,
+      };
+
+      this.clientService.removeLayers(event.clientId, removeQuery);
+    });
+  }
+
   private emitDocuments() {
     return Rx.tap(({ event, documents }) => {
       if (documents.length === 0) {
         const removeQuery = {
-          id: RENTAL_CHECKER_DOCUMENT,
+          id: collection(RentalCheckerDocument),
         };
 
         this.clientService.removeLayers(event.clientId, removeQuery);
       } else {
         const addLayers = [
           {
-            id: RENTAL_CHECKER_DOCUMENT,
-            collectionName: RENTAL_CHECKER_DOCUMENT,
-            set: event.documents,
+            id: collection(RentalCheckerDocument),
+            collectionName: collection(RentalCheckerDocument),
+            set: documents,
           },
         ];
         this.clientService.addLayers(event.clientId, addLayers);

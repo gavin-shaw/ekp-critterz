@@ -1,6 +1,3 @@
-import { formatCurrency, PriceLink } from '@earnkeeper/ekp-ui';
-import { PRICES_DOCUMENT } from '../util';
-
 export default function menus() {
   return [
     {
@@ -13,13 +10,12 @@ export default function menus() {
       navLink: 'critterz/rental-market',
       icon: 'cil-cart',
     },
-
-    // {
-    //   id: 'critterz-rental-checker',
-    //   title: 'Rental Checker',
-    //   navLink: 'critterz/rental-checker',
-    //   icon: 'cil-search',
-    // },
+    {
+      id: 'critterz-rental-checker',
+      title: 'Rental Checker',
+      navLink: 'critterz/rental-checker',
+      icon: 'cil-search',
+    },
     // {
     //   id: 'critterz-rented-critterz',
     //   title: 'Rented Critterz',

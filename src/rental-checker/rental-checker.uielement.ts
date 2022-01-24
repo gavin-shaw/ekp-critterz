@@ -1,4 +1,5 @@
 import {
+  Button,
   Card,
   Col,
   Container,
@@ -7,20 +8,21 @@ import {
   formatTemplate,
   formatTimeToNow,
   formatToken,
+  isBusy,
   Fragment,
   Icon,
+  Input,
+  JsonSchema,
   LabelWrapper,
+  Layout,
   Link,
-  MilestoneWrapper,
   PageHeaderTile,
   Row,
   Span,
   UiElement,
 } from '@earnkeeper/ekp-ui';
-import {
-  RENTAL_CHECKER_DOCUMENT,
-  RENTAL_CHECKER_MILESTONES,
-} from '../util/collectionNames';
+import { collection, path } from '../util';
+import { RentalCheckerDocument } from './rental-checker.document';
 
 export default function element(): UiElement {
   return Container({
@@ -38,23 +40,20 @@ export default function element(): UiElement {
         ],
       }),
       tokenIdForm(),
-      MilestoneWrapper({
-        milestones: `$.${RENTAL_CHECKER_MILESTONES}`,
-        child: Card({
-          className: 'mt-1',
-          when: `$.${RENTAL_CHECKER_DOCUMENT}[0]`,
-          children: [
-            Fragment({
-              when: { not: `$.${RENTAL_CHECKER_DOCUMENT}[0].notForSale` },
-              children: [sellerInfo(), sellerIsOwner(), sellerIsNotOwner()],
-            }),
-            Fragment({
-              when: `$.${RENTAL_CHECKER_DOCUMENT}[0].notForSale`,
-              children: [notForSale()],
-            }),
-            lockExpirationAndCost(),
-          ],
-        }),
+      Card({
+        className: 'mt-1',
+        when: `${path(RentalCheckerDocument)}[0]`,
+        children: [
+          Fragment({
+            when: { not: `${path(RentalCheckerDocument)}[0].notForSale` },
+            children: [sellerInfo(), sellerIsOwner(), sellerIsNotOwner()],
+          }),
+          Fragment({
+            when: `${path(RentalCheckerDocument)}[0].notForSale`,
+            children: [notForSale()],
+          }),
+          lockExpirationAndCost(),
+        ],
       }),
     ],
   });
@@ -67,23 +66,20 @@ function tokenIdForm(): UiElement {
         children: [
           Form({
             name: 'critterzRentalCheck',
-            uischema: {
-              type: 'Control',
-              scope: '#/properties/tokenId',
-              label: `Enter sCritterz Token ID`,
-            },
-            schema: {
-              type: 'object',
-              properties: {
-                tokenId: {
-                  type: 'string',
-                },
-              },
-              default: {
-                tokenId: '',
-              },
-            },
-            submitLabel: 'Check',
+            schema: JsonSchema.simple({
+              tokenId: 'number',
+            }),
+            child: Layout.autocol([
+              Input({
+                label: 'Token Id',
+                name: 'tokenId',
+              }),
+              Button({
+                label: 'Check',
+                isSubmit: true,
+                isBusy: isBusy(collection(RentalCheckerDocument)),
+              }),
+            ]),
           }),
         ],
       }),
@@ -104,7 +100,7 @@ function sellerInfo(): UiElement {
               href: formatTemplate(
                 'https://etherscan.io/address/{{ seller }}',
                 {
-                  seller: `$.${RENTAL_CHECKER_DOCUMENT}[0].sellerAddress`,
+                  seller: `${path(RentalCheckerDocument)}[0].sellerAddress`,
                 },
               ),
             }),
@@ -118,7 +114,7 @@ function sellerInfo(): UiElement {
 function sellerIsOwner() {
   return Container({
     className: 'px-0 py-2',
-    when: `$.${RENTAL_CHECKER_DOCUMENT}[0].sellerIsOwner`,
+    when: `${path(RentalCheckerDocument)}[0].sellerIsOwner`,
     children: [
       Row({
         children: [
@@ -165,22 +161,22 @@ function lockExpirationAndCost(): UiElement {
               children: [
                 Span({
                   className: 'font-medium-4',
-                  when: `$.${RENTAL_CHECKER_DOCUMENT}[0].lockExpiration`,
+                  when: `${path(RentalCheckerDocument)}[0].lockExpiration`,
                   content: formatTimeToNow(
-                    `$.${RENTAL_CHECKER_DOCUMENT}[0].lockExpiration`,
+                    `${path(RentalCheckerDocument)}[0].lockExpiration`,
                   ),
                 }),
                 Span({
                   className: 'font-medium-4',
                   when: {
-                    not: `$.${RENTAL_CHECKER_DOCUMENT}[0].lockExpiration`,
+                    not: `${path(RentalCheckerDocument)}[0].lockExpiration`,
                   },
                   content: '?',
                 }),
               ],
             }),
             feedbackText: formatDatetime(
-              `$.${RENTAL_CHECKER_DOCUMENT}[0].lockExpiration`,
+              `${path(RentalCheckerDocument)}[0].lockExpiration`,
             ),
           }),
         ],
@@ -189,23 +185,23 @@ function lockExpirationAndCost(): UiElement {
         children: [
           LabelWrapper({
             label: 'Estimated Total Cost',
-            when: { not: `$.${RENTAL_CHECKER_DOCUMENT}[0].notForSale` },
+            when: { not: `${path(RentalCheckerDocument)}[0].notForSale` },
             child: Span({
               className: 'font-medium-4',
               content: formatTemplate('{{ eth }} ETH', {
                 eth: formatToken(
-                  `$.${RENTAL_CHECKER_DOCUMENT}[0].estimatedCostTotal`,
+                  `${path(RentalCheckerDocument)}[0].estimatedCostTotal`,
                 ),
               }),
             }),
             feedbackText: formatTemplate('{{ eth }} + {{ gas }} gas', {
-              eth: formatToken(`$.${RENTAL_CHECKER_DOCUMENT}[0].ethCost`),
-              gas: formatToken(`$.${RENTAL_CHECKER_DOCUMENT}[0].gasCost`),
+              eth: formatToken(`${path(RentalCheckerDocument)}[0].ethCost`),
+              gas: formatToken(`${path(RentalCheckerDocument)}[0].gasCost`),
             }),
           }),
           LabelWrapper({
             label: 'Estimated Total Cost',
-            when: `$.${RENTAL_CHECKER_DOCUMENT}[0].notForSale`,
+            when: `${path(RentalCheckerDocument)}[0].notForSale`,
             child: Span({
               className: 'font-medium-4',
               content: '?',
@@ -221,7 +217,7 @@ function sellerIsNotOwner(): UiElement {
   return Container({
     className: 'px-0 py-2',
     when: {
-      not: `$.${RENTAL_CHECKER_DOCUMENT}[0].sellerIsOwner`,
+      not: `${path(RentalCheckerDocument)}[0].sellerIsOwner`,
     },
     children: [
       Row({

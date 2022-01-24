@@ -1,6 +1,10 @@
-import { DocumentDto } from '@earnkeeper/ekp-sdk-nestjs';
+import { EkDocument } from 'src/rental-market/ek-document';
 
-export interface RentalCheckerDocument extends DocumentDto {
+export class RentalCheckerDocument extends EkDocument {
+  constructor(properties: RentalCheckerDocument) {
+    super(properties);
+  }
+
   readonly estimatedCostTotal: number;
   readonly ethCost: number;
   readonly gasCost: number;

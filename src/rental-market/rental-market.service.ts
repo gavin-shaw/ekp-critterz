@@ -11,6 +11,7 @@ import {
 } from '@earnkeeper/ekp-sdk-nestjs';
 import { AssetEvent } from '@earnkeeper/ekp-sdk-nestjs/dist/sdk/opensea/model';
 import { InjectQueue } from '@nestjs/bull';
+import { Injectable } from '@nestjs/common';
 import { Queue } from 'bull';
 import { ethers } from 'ethers';
 import _ from 'lodash';
@@ -18,13 +19,14 @@ import moment from 'moment';
 import * as Rx from 'rxjs';
 import {
   BLOCK_CONTRACT_ADDRESS,
+  collection,
   DEFAULT_QUEUE,
   scritterzAbi,
   SCRITTERZ_CONTRACT_ADDRESS,
 } from '../util';
-import { collection } from '../util/paths';
 import { RentalListingDocument } from './rental-listing.document';
 
+@Injectable()
 export class RentalMarketService {
   constructor(
     @InjectQueue(DEFAULT_QUEUE) protected queue: Queue,
@@ -36,7 +38,8 @@ export class RentalMarketService {
   ) {
     this.clientService.clientStateEvents$
       .pipe(
-        // this.emitBusy(),
+        this.filterPath(),
+        this.emitBusy(),
         this.initContext(),
         this.fetchPrices(),
         this.fetchAssetEvents(),
@@ -44,8 +47,7 @@ export class RentalMarketService {
           obs.pipe(this.mapListingDocument(), this.emitListingLayer()),
         ),
         this.removeOldListingLayers(),
-        // this.cleanListingLayers(),
-        // this.emitDone(),
+        this.emitDone(),
       )
       .subscribe();
 
@@ -59,6 +61,43 @@ export class RentalMarketService {
     //     this.emitDone(),
     //   )
     //   .subscribe();
+  }
+
+  // TODO: make this dry
+  filterPath() {
+    return Rx.filter(
+      (event: ClientStateChangedEvent) =>
+        event?.state?.client?.path === '/plugin/critterz/rental-market',
+    );
+  }
+
+  // TODO: make this DRY
+  protected emitBusy() {
+    return Rx.tap((event: ClientStateChangedEvent) => {
+      const collectionName = collection(RentalListingDocument);
+
+      const addLayers = [
+        {
+          id: `busy-${collectionName}`,
+          collectionName: 'busy',
+          set: [{ id: collectionName }],
+        },
+      ];
+      this.clientService.addLayers(event.clientId, addLayers);
+    });
+  }
+
+  // TODO: make this DRY
+  protected emitDone() {
+    const collectionName = collection(RentalListingDocument);
+
+    return Rx.tap((context: RentalListingContext) => {
+      const removeQuery = {
+        id: `busy-${collectionName}`,
+      };
+
+      this.clientService.removeLayers(context.clientId, removeQuery);
+    });
   }
 
   fetchPrices(): Rx.OperatorFunction<
@@ -196,8 +235,9 @@ export class RentalMarketService {
 
   mapListingDocument() {
     return Rx.mergeMap(async (context: RentalListingContext) => {
-      const numCritter = 1;
-      const numHours = 3;
+      const form = context.clientState?.forms?.critterzMarketParams;
+      const numCritter = (form?.ownedCritterz ?? 0) + 1;
+      const numHours = form?.playHours ?? 3;
 
       const createdEvent = context.assetEvents.find(
         (it) => it.event_type === 'created',
