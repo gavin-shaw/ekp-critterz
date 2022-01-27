@@ -1,309 +1,290 @@
 import {
+  AssetEventDto,
   ClientService,
   ClientStateChangedEvent,
-  ClientStateDto,
   CoingeckoService,
   EthersService,
   LayerDto,
   MoralisService,
-  opensea,
   OpenseaService,
 } from '@earnkeeper/ekp-sdk-nestjs';
-import { AssetEvent } from '@earnkeeper/ekp-sdk-nestjs/dist/sdk/opensea/model';
-import { InjectQueue } from '@nestjs/bull';
 import { Injectable } from '@nestjs/common';
-import { Queue } from 'bull';
+import { randomUUID } from 'crypto';
 import { ethers } from 'ethers';
 import _ from 'lodash';
 import moment from 'moment';
-import * as Rx from 'rxjs';
+import { filter, map } from 'rxjs';
+import { EkDocument } from 'src/rental-market/ek-document';
 import {
   BLOCK_CONTRACT_ADDRESS,
   collection,
-  DEFAULT_QUEUE,
   scritterzAbi,
   SCRITTERZ_CONTRACT_ADDRESS,
 } from '../util';
 import { RentalListingDocument } from './rental-listing.document';
 
+const FILTER_PATH = '/plugin/critterz/rental-market';
+const COLLECTION_NAME = collection(RentalListingDocument);
+
+function filterPath(event: ClientStateChangedEvent, path: string) {
+  return event.state?.client?.path === path;
+}
+
 @Injectable()
 export class RentalMarketService {
+  async handleClientStateEvent(
+    clientStateChangedEvent: ClientStateChangedEvent,
+  ) {
+    await this.emitBusy(clientStateChangedEvent, COLLECTION_NAME);
+
+    const assetEvents24h = await this.fetchAssetEvents24h();
+
+    const prices = await this.fetchPrices(clientStateChangedEvent);
+
+    const listings = assetEvents24h.filter(
+      (it) => it.event_type === 'created' && Number(it.quantity) === 1,
+    );
+
+    const sales = _.chain(assetEvents24h)
+      .filter(
+        (it) => it.event_type === 'successful' && Number(it.quantity) === 1,
+      )
+      .groupBy((it) => `${it.seller.address}-${it.asset?.token_id}`)
+      .mapValues((it) => it[0])
+      .value();
+
+    await Promise.all(
+      listings.map(async (listing) => {
+        const sale =
+          sales[`${listing.seller.address}-${listing.asset?.token_id}`];
+        const document = await this.mapListingDocument(
+          clientStateChangedEvent,
+          listing,
+          sale,
+          prices,
+        );
+
+        if (!!document) {
+          await this.emitDocuments(clientStateChangedEvent, COLLECTION_NAME, [
+            document,
+          ]);
+        }
+      }),
+    );
+
+    await this.removeOldLayers(clientStateChangedEvent, COLLECTION_NAME);
+
+    await this.emitDone(clientStateChangedEvent, COLLECTION_NAME);
+  }
+
+  async handleOpenseaAssetEvents(newAssetEvents: AssetEventDto[]) {
+    const clientStates = await this.clientService.latestClientStateEvents.then(
+      (events) =>
+        events.filter(
+          (event) => filterPath(event, FILTER_PATH) && !!event.received,
+        ),
+    );
+
+    if (clientStates.length === 0) {
+      return;
+    }
+
+    const assetEvents24h = await this.fetchAssetEvents24h();
+
+    const newSales = _.chain(newAssetEvents)
+      .filter(
+        (it) => it.event_type === 'successful' && Number(it.quantity) === 1,
+      )
+      .groupBy((it) => `${it.seller.address}-${it.asset?.token_id}`)
+      .mapValues((it) => it[0])
+      .value();
+
+    const allListings = _.chain(assetEvents24h)
+      .filter((it) => it.event_type === 'created' && Number(it.quantity) === 1)
+      .groupBy((it) => `${it.seller.address}-${it.asset?.token_id}`)
+      .mapValues((it) => it[0])
+      .value();
+
+    await Promise.all(
+      clientStates.map(async (clientStateChangedEvent) => {
+        await this.emitBusy(clientStateChangedEvent, COLLECTION_NAME);
+
+        const prices = await this.fetchPrices(clientStateChangedEvent);
+
+        await Promise.all(
+          newAssetEvents.map(async (assetEvent) => {
+            let listing: AssetEventDto;
+            let sale: AssetEventDto;
+
+            if (assetEvent.event_type === 'created') {
+              listing = assetEvent;
+              sale =
+                newSales[
+                  `${assetEvent.seller.address}-${assetEvent.asset?.token_id}`
+                ];
+            }
+
+            if (assetEvent.event_type === 'successful') {
+              listing =
+                allListings[
+                  `${assetEvent.seller.address}-${assetEvent.asset?.token_id}`
+                ];
+
+              sale = assetEvent;
+            }
+
+            if (!listing) {
+              return;
+            }
+
+            const document = await this.mapListingDocument(
+              clientStateChangedEvent,
+              listing,
+              sale,
+              prices,
+            );
+
+            await this.emitDocuments(clientStateChangedEvent, COLLECTION_NAME, [
+              document,
+            ]);
+          }),
+        );
+
+        await this.emitDone(clientStateChangedEvent, COLLECTION_NAME);
+      }),
+    );
+  }
+
   constructor(
-    @InjectQueue(DEFAULT_QUEUE) protected queue: Queue,
-    private clientService: ClientService,
     private coingeckoService: CoingeckoService,
     private ethersService: EthersService,
     private openseaService: OpenseaService,
     private moralisService: MoralisService,
+    private clientService: ClientService,
   ) {
+    this.openseaService.syncAssetEvents(SCRITTERZ_CONTRACT_ADDRESS);
+
     this.clientService.clientStateEvents$
+      .pipe(filter((event) => filterPath(event, FILTER_PATH)))
+      .subscribe((event) => {
+        this.handleClientStateEvent(event);
+      });
+
+    this.openseaService.assetPolls$
       .pipe(
-        this.filterPath(),
-        this.emitBusy(),
-        this.initContext(),
-        this.fetchPrices(),
-        this.fetchAssetEvents(),
-        this.forkJoin(this.splitByAssetId, (obs) =>
-          obs.pipe(this.mapListingDocument(), this.emitListingLayer()),
+        filter((poll) => poll.contractAddress === SCRITTERZ_CONTRACT_ADDRESS),
+        map((poll) =>
+          poll.events.filter((it) =>
+            ['created', 'successful'].includes(it.event_type),
+          ),
         ),
-        this.removeOldListingLayers(),
-        this.emitDone(),
+        filter((events) => events.length > 0),
       )
-      .subscribe();
-
-    // this.eventsChangedSub = this.openseaService
-    //   .pollEvents$(SCRITTERZ_CONTRACT_ADDRESS)
-    //   .pipe(
-    //     this.splitEventsPerClients(),
-    //     this.emitBusy(),
-    //     this.mapListingDocuments(),
-    //     this.emitListingDocuments(),
-    //     this.emitDone(),
-    //   )
-    //   .subscribe();
+      .subscribe((events) => {
+        this.handleOpenseaAssetEvents(events);
+      });
   }
 
-  // TODO: make this dry
-  filterPath() {
-    return Rx.filter(
-      (event: ClientStateChangedEvent) =>
-        event?.state?.client?.path === '/plugin/critterz/rental-market',
+  async fetchPrices(
+    event: ClientStateChangedEvent,
+  ): Promise<{ ethPrice: number; ethGasCost: number; blockPrice: number }> {
+    const currency = event.state.client.selectedCurrency;
+    const gasPriceBn = await this.ethersService.wrapProviderCall(
+      'eth',
+      async (provider) => provider.getGasPrice(),
     );
+    const nativeTokenPrices = await this.coingeckoService.nativeCoinPrices(
+      currency.id,
+    );
+
+    const ethGasCost = Number(ethers.utils.formatEther(gasPriceBn.mul(204764)));
+
+    const ethPrice = nativeTokenPrices['eth'];
+
+    const blockErc20Price = await this.moralisService.latestTokenPriceOf(
+      'eth',
+      BLOCK_CONTRACT_ADDRESS,
+    );
+
+    const blockPrice = !!blockErc20Price
+      ? Number(ethers.utils.formatEther(blockErc20Price.nativePrice.value)) *
+        ethPrice
+      : undefined;
+
+    return { ethPrice, ethGasCost, blockPrice };
   }
 
-  // TODO: make this DRY
-  protected emitBusy() {
-    return Rx.tap((event: ClientStateChangedEvent) => {
-      const collectionName = collection(RentalListingDocument);
+  async fetchAssetEvents24h(): Promise<AssetEventDto[]> {
+    const since = moment().subtract(1, 'day').unix();
 
-      const addLayers = [
-        {
-          id: `busy-${collectionName}`,
-          collectionName: 'busy',
-          set: [{ id: collectionName }],
-        },
-      ];
-      this.clientService.addLayers(event.clientId, addLayers);
+    return this.openseaService.eventsOf(SCRITTERZ_CONTRACT_ADDRESS, since, [
+      'created',
+      'successful',
+    ]);
+  }
+
+  async mapListingDocument(
+    clientEvent: ClientStateChangedEvent,
+    listing: AssetEventDto,
+    sale: AssetEventDto,
+    prices: { ethPrice: number; ethGasCost: number; blockPrice: number },
+  ) {
+    const nowMoment = moment.unix(clientEvent.received);
+    const form = clientEvent.state?.forms?.critterzMarketParams;
+    const numCritter = form?.ownedCritterz ?? 0;
+    const numHours = form?.playHours ?? 3;
+
+    const ethCost = Number(ethers.utils.formatEther(listing.starting_price));
+
+    if (!listing.asset) {
+      console.log(listing);
+    }
+    const tokenId = listing.asset.token_id;
+
+    let expiresAt = await this.getExpiresAt(tokenId);
+
+    if (!expiresAt) {
+      expiresAt = clientEvent.received + 7 * 1440 * 60;
+    }
+
+    let hoursLeft = moment.unix(expiresAt).diff(nowMoment, 'hours');
+
+    if (hoursLeft < 0) {
+      hoursLeft = 0;
+    }
+
+    const calcBlock = (numCritter) =>
+      ((24 * numCritter + Math.sqrt(numCritter * numHours) * 100) *
+        0.66 *
+        hoursLeft) /
+      24;
+
+    const estBlock = calcBlock(numCritter + 1) - calcBlock(numCritter);
+
+    const totalCost = (ethCost + prices.ethGasCost) * prices.ethPrice;
+
+    const document = new RentalListingDocument({
+      estBlock,
+      estProfit: !!prices.blockPrice
+        ? estBlock * prices.blockPrice - totalCost
+        : undefined,
+      ethCost,
+      ethGasCost: prices.ethGasCost,
+      expiresAt,
+      fiatSymbol: clientEvent.state.client.selectedCurrency.symbol,
+      id: listing.asset.id.toString(),
+      tokenId,
+      tokenIdLink: `https://opensea.io/assets/${SCRITTERZ_CONTRACT_ADDRESS}/${listing.asset.token_id}`,
+      listed: moment(`${listing.listing_time}Z`).unix(),
+      name: listing.asset.name,
+      updated: nowMoment.unix(),
+      seller: listing.seller?.address,
+      sold: !!sale,
+      soldTime: !!sale ? moment(`${sale.created_date}Z`).unix() : undefined,
+      totalCost,
     });
-  }
 
-  // TODO: make this DRY
-  protected emitDone() {
-    const collectionName = collection(RentalListingDocument);
-
-    return Rx.tap((context: RentalListingContext) => {
-      const removeQuery = {
-        id: `busy-${collectionName}`,
-      };
-
-      this.clientService.removeLayers(context.clientId, removeQuery);
-    });
-  }
-
-  fetchPrices(): Rx.OperatorFunction<
-    RentalListingContext,
-    RentalListingContext
-  > {
-    return Rx.mergeMap(async (context: RentalListingContext) => {
-      const currency = context.clientState.client.selectedCurrency;
-      const gasPriceBn = await this.ethersService.wrapProviderCall(
-        'eth',
-        async (provider) => provider.getGasPrice(),
-      );
-      const nativeTokenPrices = await this.coingeckoService.nativeCoinPrices(
-        currency.id,
-      );
-
-      const ethGasCost = Number(
-        ethers.utils.formatEther(gasPriceBn.mul(204764)),
-      );
-
-      const ethPrice = nativeTokenPrices['eth'];
-
-      const blockErc20Price = await this.moralisService.latestTokenPriceOf(
-        'eth',
-        BLOCK_CONTRACT_ADDRESS,
-      );
-
-      const blockPrice = !!blockErc20Price
-        ? Number(ethers.utils.formatEther(blockErc20Price.nativePrice.value)) *
-          ethPrice
-        : undefined;
-
-      return { ...context, ethPrice, ethGasCost, blockPrice };
-    });
-  }
-
-  initContext(): Rx.OperatorFunction<
-    ClientStateChangedEvent,
-    RentalListingContext
-  > {
-    return Rx.map((clientStateChangedEvent) => ({
-      clientState: clientStateChangedEvent.state,
-      clientId: clientStateChangedEvent.clientId,
-      startTimestamp: moment().unix(),
-    }));
-  }
-
-  splitByAssetId(context: RentalListingContext): RentalListingContext[] {
-    return _.chain(context.assetEvents)
-      .groupBy((it: opensea.AssetEvent) => it.asset.id)
-      .mapValues(
-        (assetEvents: AssetEvent[]) =>
-          <RentalListingContext>{
-            ...context,
-            asset: assetEvents[0].asset,
-            assetEvents,
-          },
-      )
-      .values()
-      .value();
-  }
-
-  fetchAssetEvents(): Rx.OperatorFunction<
-    RentalListingContext,
-    RentalListingContext
-  > {
-    return Rx.mergeMap(async (context: RentalListingContext) => {
-      const [created, successful] = await Promise.all([
-        this.openseaService.eventsOf(SCRITTERZ_CONTRACT_ADDRESS, 'created'),
-        this.openseaService.eventsOf(SCRITTERZ_CONTRACT_ADDRESS, 'successful'),
-      ]);
-
-      const assetEvents: AssetEvent[] = _.chain(created)
-        .union(successful)
-        .value();
-
-      return { ...context, assetEvents };
-    });
-  }
-
-  emitListingLayer(): Rx.OperatorFunction<
-    RentalListingContext,
-    RentalListingContext
-  > {
-    return Rx.tap((context) => {
-      if (!context.document) {
-        return;
-      }
-
-      const collectionName = collection(RentalListingDocument);
-
-      const addLayers: LayerDto[] = [
-        {
-          id: `${collectionName}-${context.document.id}`,
-          collectionName,
-          set: [context.document],
-          tags: [collectionName],
-          timestamp: moment().unix(),
-        },
-      ];
-      this.clientService.addLayers(context.clientId, addLayers);
-    });
-  }
-
-  removeOldListingLayers(): Rx.OperatorFunction<
-    RentalListingContext,
-    RentalListingContext
-  > {
-    return Rx.tap((context) => {
-      this.clientService.removeLayers(context.clientId, {
-        tags: [collection(RentalListingDocument)],
-        timestamp: {
-          lt: context.startTimestamp,
-        },
-      });
-    });
-  }
-
-  mapWithJob<C>(queue: Queue, jobName: string): Rx.OperatorFunction<C, C> {
-    return Rx.mergeMap(async (context: C) => {
-      const job = await queue.add(jobName, context);
-      return await job.finished();
-    });
-  }
-
-  splitEventsPerClients() {
-    return Rx.flatMap(async (events) => {
-      const clientStates = await this.clientService.latestClientStateEvents;
-      return clientStates.map((clientState) => ({
-        clientState,
-        events,
-      }));
-    });
-  }
-
-  mapListingDocument() {
-    return Rx.mergeMap(async (context: RentalListingContext) => {
-      const nowMoment = moment.unix(context.startTimestamp);
-      const form = context.clientState?.forms?.critterzMarketParams;
-      const numCritter = form?.ownedCritterz ?? 0;
-      const numHours = form?.playHours ?? 3;
-
-      const createdEvent = context.assetEvents.find(
-        (it) => it.event_type === 'created',
-      );
-
-      if (!createdEvent) {
-        return context;
-      }
-
-      const soldEvent = context.assetEvents.find(
-        (it) => it.event_type === 'successful',
-      );
-
-      const ethCost = Number(
-        ethers.utils.formatEther(createdEvent.starting_price),
-      );
-
-      const tokenId = context.asset.token_id;
-
-      let expiresAt = await this.getExpiresAt(tokenId);
-
-      if (!expiresAt) {
-        expiresAt = context.startTimestamp + 7 * 86400;
-      }
-      let hoursLeft = moment.unix(expiresAt).diff(nowMoment, 'hours');
-
-      if (hoursLeft < 0) {
-        hoursLeft = 0;
-      }
-
-      const calcBlock = (numCritter) =>
-        ((24 * numCritter + Math.sqrt(numCritter * numHours) * 100) *
-          0.66 *
-          hoursLeft) /
-        24;
-
-      const estBlock = calcBlock(numCritter + 1) - calcBlock(numCritter);
-
-      const totalCost = (ethCost + context.ethGasCost) * context.ethPrice;
-
-      const document = new RentalListingDocument({
-        estBlock,
-        estProfit: !!context.blockPrice
-          ? estBlock * context.blockPrice - totalCost
-          : undefined,
-        ethCost,
-        ethGasCost: context.ethGasCost,
-        expiresAt,
-        fiatSymbol: context.clientState.client.selectedCurrency.symbol,
-        id: context.asset.id.toString(),
-        tokenId,
-        tokenIdLink: `https://opensea.io/assets/${SCRITTERZ_CONTRACT_ADDRESS}/${context.asset.token_id}`,
-        listed: moment(`${createdEvent.listing_time}Z`).unix(),
-        name: context.asset.name,
-        updated: context.startTimestamp,
-        seller: createdEvent.seller?.address,
-        sold: !!soldEvent,
-        soldTime: !!soldEvent
-          ? moment(`${soldEvent.created_date}Z`).unix()
-          : undefined,
-        totalCost,
-      });
-
-      return { ...context, document };
-    });
+    return document;
   }
 
   private async getExpiresAt(tokenId: string): Promise<number> {
@@ -334,26 +315,52 @@ export class RentalMarketService {
       },
     );
   }
-  private forkJoin<T, R>(
-    splitter: (input: T) => R[],
-    projection: (obs: Rx.Observable<R>) => Rx.Observable<R>,
-  ): Rx.OperatorFunction<T, T> {
-    return Rx.mergeMap((context: T) =>
-      Rx.forkJoin(
-        splitter(context).map((item) => projection(Rx.of(item))),
-      ).pipe(Rx.mapTo(context)),
-    );
-  }
-}
 
-interface RentalListingContext {
-  readonly clientState: ClientStateDto;
-  readonly clientId: string;
-  readonly asset?: opensea.Asset;
-  readonly assetEvents?: opensea.AssetEvent[];
-  readonly blockPrice?: number;
-  readonly document?: RentalListingDocument;
-  readonly ethPrice?: number;
-  readonly ethGasCost?: number;
-  readonly startTimestamp: number;
+  async emitBusy(event: ClientStateChangedEvent, collectionName: string) {
+    const addLayers = [
+      {
+        id: `busy-${collectionName}`,
+        collectionName: 'busy',
+        set: [{ id: collectionName }],
+      },
+    ];
+    await this.clientService.addLayers(event.clientId, addLayers);
+  }
+
+  async emitDone(event: ClientStateChangedEvent, collectionName: string) {
+    const removeQuery = {
+      id: `busy-${collectionName}`,
+    };
+
+    await this.clientService.removeLayers(event.clientId, removeQuery);
+  }
+
+  async emitDocuments(
+    clientEvent: ClientStateChangedEvent,
+    collectionName: string,
+    documents: EkDocument[],
+  ) {
+    const addLayers: LayerDto[] = [
+      {
+        id: randomUUID(),
+        collectionName,
+        set: documents,
+        tags: [collectionName],
+        timestamp: moment().unix(),
+      },
+    ];
+    await this.clientService.addLayers(clientEvent.clientId, addLayers);
+  }
+
+  async removeOldLayers(
+    clientStateChangedEvent: ClientStateChangedEvent,
+    collectionName: string,
+  ) {
+    await this.clientService.removeLayers(clientStateChangedEvent.clientId, {
+      tags: [collectionName],
+      timestamp: {
+        lt: clientStateChangedEvent.received,
+      },
+    });
+  }
 }
