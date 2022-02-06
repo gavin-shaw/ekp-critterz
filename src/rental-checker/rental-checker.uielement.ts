@@ -1,3 +1,4 @@
+import { collection, path } from '@earnkeeper/ekp-sdk-nestjs';
 import {
   Button,
   Card,
@@ -8,10 +9,10 @@ import {
   formatTemplate,
   formatTimeToNow,
   formatToken,
-  isBusy,
   Fragment,
   Icon,
   Input,
+  isBusy,
   JsonSchema,
   LabelWrapper,
   Layout,
@@ -21,7 +22,6 @@ import {
   Span,
   UiElement,
 } from '@earnkeeper/ekp-ui';
-import { collection, path } from '../util';
 import { RentalCheckerDocument } from './rental-checker.document';
 
 export default function element(): UiElement {

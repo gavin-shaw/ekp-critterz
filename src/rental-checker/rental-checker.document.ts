@@ -1,4 +1,4 @@
-import { EkDocument } from 'src/rental-market/ek-document';
+import { EkDocument } from '@earnkeeper/ekp-sdk-nestjs';
 
 export class RentalCheckerDocument extends EkDocument {
   constructor(properties: RentalCheckerDocument) {

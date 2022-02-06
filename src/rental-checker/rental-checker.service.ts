@@ -1,6 +1,7 @@
 import {
   ClientService,
   ClientStateChangedEvent,
+  collection,
   EthersService,
   MoralisService,
   OpenseaService,
@@ -10,7 +11,6 @@ import { ethers } from 'ethers';
 import _ from 'lodash';
 import * as Rx from 'rxjs';
 import {
-  collection,
   NULL_ADDRESS,
   scritterzAbi,
   SCRITTERZ_CONTRACT_ADDRESS,

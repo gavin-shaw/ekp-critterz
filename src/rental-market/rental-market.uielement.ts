@@ -1,3 +1,4 @@
+import { collection, documents } from '@earnkeeper/ekp-sdk-nestjs';
 import {
   Button,
   Col,
@@ -18,8 +19,6 @@ import {
   Span,
   UiElement,
 } from '@earnkeeper/ekp-ui';
-import { documents } from '../util';
-import { collection } from '../util/paths';
 import { RentalListingDocument } from './rental-listing.document';
 
 export default function element(): UiElement {

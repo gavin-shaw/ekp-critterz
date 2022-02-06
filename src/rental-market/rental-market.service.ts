@@ -3,6 +3,8 @@ import {
   ClientService,
   ClientStateChangedEvent,
   CoingeckoService,
+  collection,
+  EkDocument,
   EthersService,
   LayerDto,
   MoralisService,
@@ -14,10 +16,8 @@ import { ethers } from 'ethers';
 import _ from 'lodash';
 import moment from 'moment';
 import { filter, map } from 'rxjs';
-import { EkDocument } from 'src/rental-market/ek-document';
 import {
   BLOCK_CONTRACT_ADDRESS,
-  collection,
   scritterzAbi,
   SCRITTERZ_CONTRACT_ADDRESS,
 } from '../util';
