@@ -1,6 +1,6 @@
 {
   "name": "ekp-critterz",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "EarnKeeper.io plugin for https://critterz.xyz",
   "main": "index.js",
   "scripts": {
@@ -23,6 +23,10 @@
     "url": "https://github.com/gavin-shaw/ekp-critterz/issues"
   },
   "homepage": "https://github.com/gavin-shaw/ekp-critterz#readme",
+  "dependencies": {
+    "@earnkeeper/ekp-ui": "^0.1.3",
+    "@earnkeeper/ekp-sdk-nestjs": "^0.4.4"
+  },
   "devDependencies": {
     "@nestjs/cli": "^8.0.0",
     "@nestjs/schematics": "^8.0.0",
@@ -47,9 +51,5 @@
     "ts-node": "^10.0.0",
     "tsconfig-paths": "^3.10.1",
     "typescript": "^4.3.5"
-  },
-  "dependencies": {
-    "@earnkeeper/ekp-sdk-nestjs": "^0.2.15",
-    "@earnkeeper/ekp-ui": "^0.1.3"
   }
 }
